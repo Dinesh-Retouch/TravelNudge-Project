@@ -1,7 +1,29 @@
+import sys
+import os
+
+# Add the current directory to Python path
+sys.path.append(os.path.dirname(__file__))
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.database.database import engine
-from app.models.user import Base
+
+# Try different import approaches
+try:
+    from app.database.database import engine
+    from app.models.user import Base
+    print("✅ Imported from app package")
+except ImportError:
+    try:
+        from database.database import engine
+        from models.user import Base
+        print("✅ Imported from direct modules")
+    except ImportError as e:
+        print(f"❌ Import error: {e}")
+        print("Current directory:", os.getcwd())
+        print("Files in current directory:", os.listdir('.'))
+        if os.path.exists('database'):
+            print("Database directory contents:", os.listdir('database'))
+        raise
 
 # Drop and recreate all tables (for development)
 Base.metadata.drop_all(bind=engine)
@@ -25,10 +47,28 @@ app.add_middleware(
 # Import and include routers
 try:
     from app.routers.auth import auth_router
-    app.include_router(auth_router, prefix="/api/v1/auth", tags=["Authentication"])
+    app.include_router(auth_router, tags=["Authentication"])
     print("✅ Auth router loaded successfully")
-except ImportError as e:
-    print(f"❌ Router import error: {e}")
+except ImportError:
+    try:
+        from routers.auth import auth_router
+        app.include_router(auth_router, tags=["Authentication"])
+        print("✅ Auth router loaded successfully (direct import)")
+    except ImportError as e:
+        print(f"❌ Auth router import error: {e}")
+
+# AI Router
+try:
+    from app.routers.ai import router as ai_router
+    app.include_router(ai_router, tags=["AI"])
+    print("✅ AI router loaded successfully")
+except ImportError:
+    try:
+        from routers.ai import router as ai_router
+        app.include_router(ai_router, tags=["AI"])
+        print("✅ AI router loaded successfully (direct import)")
+    except ImportError as e:
+        print(f"❌ AI router import error: {e}")
 
 @app.get("/")
 def read_root():
@@ -59,6 +99,9 @@ def api_info():
                 "login": "/api/v1/auth/login", 
                 "logout": "/api/v1/auth/logout",
                 "me": "/api/v1/auth/me"
+            },
+            "ai": {
+                "chat": "/ai/chat"
             }
         }
     }
