@@ -13,3 +13,6 @@ pydantic[email]
 argon2_cffi
 google-generativeai
 python-dotenv
+google-generativeai
+duckduckgo-search
+python-multipart
