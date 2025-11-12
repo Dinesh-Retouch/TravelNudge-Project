@@ -1,33 +1,10 @@
 import sys
 import os
-
-# Add the current directory to Python path
-sys.path.append(os.path.dirname(__file__))
-
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-# Try different import approaches
-try:
-    from app.database.database import engine
-    from app.models.user import Base
-    print("✅ Imported from app package")
-except ImportError:
-    try:
-        from database.database import engine
-        from models.user import Base
-        print("✅ Imported from direct modules")
-    except ImportError as e:
-        print(f"❌ Import error: {e}")
-        print("Current directory:", os.getcwd())
-        print("Files in current directory:", os.listdir('.'))
-        if os.path.exists('database'):
-            print("Database directory contents:", os.listdir('database'))
-        raise
-
-# Drop and recreate all tables (for development)
-Base.metadata.drop_all(bind=engine)
-Base.metadata.create_all(bind=engine)
+# Add the current directory to Python path
+sys.path.append(os.path.dirname(__file__))
 
 app = FastAPI(
     title="TravelNudge API",
@@ -38,7 +15,7 @@ app = FastAPI(
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -46,29 +23,13 @@ app.add_middleware(
 
 # Import and include routers
 try:
-    from app.routers.auth import auth_router
+    from routers.auth import auth_router
     app.include_router(auth_router, tags=["Authentication"])
     print("✅ Auth router loaded successfully")
-except ImportError:
-    try:
-        from routers.auth import auth_router
-        app.include_router(auth_router, tags=["Authentication"])
-        print("✅ Auth router loaded successfully (direct import)")
-    except ImportError as e:
-        print(f"❌ Auth router import error: {e}")
+except ImportError as e:
+    print(f"❌ Auth router import error: {e}")
 
-# AI Router
-try:
-    from app.routers.ai import router as ai_router
-    app.include_router(ai_router, tags=["AI"])
-    print("✅ AI router loaded successfully")
-except ImportError:
-    try:
-        from routers.ai import router as ai_router
-        app.include_router(ai_router, tags=["AI"])
-        print("✅ AI router loaded successfully (direct import)")
-    except ImportError as e:
-        print(f"❌ AI router import error: {e}")
+
 
 @app.get("/")
 def read_root():
@@ -78,9 +39,7 @@ def read_root():
         "version": "1.0.0",
         "docs": "Visit /docs for API documentation",
         "endpoints": {
-            "signup": "POST /api/v1/auth/signup",
-            "login": "POST /api/v1/auth/login",
-            "health": "GET /health"
+            "ai_chat": "POST /ai/chat"
         }
     }
 
