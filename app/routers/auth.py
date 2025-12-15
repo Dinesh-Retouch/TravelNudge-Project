@@ -3,11 +3,13 @@ from sqlalchemy.orm import Session
 from app.database.database import get_db
 from app.models.user import User, UserSession
 from app.schemas.user import UserCreate, UserLogin, UserResponse, Token
-from app.utils.auth import get_password_hash, verify_password, create_access_token
+from app.utils.auth import get_password_hash, verify_password, create_access_token, verify_token
 from app.utils.responses import success_response, created_response, error_response
 from datetime import datetime, timedelta
 from pydantic import BaseModel
 from typing import Optional
+from app.utils.email import send_email
+from fastapi.responses import JSONResponse
 
 auth_router = APIRouter()
 
@@ -147,6 +149,86 @@ def logout(token: str, db: Session = Depends(get_db)):
         db.commit()
     
     return success_response("Logout successful")
+
+@auth_router.post("/forgot-password")
+def forgot_password(request_data: dict, db: Session = Depends(get_db)):
+    """
+    Request password reset email
+    """
+    email = request_data.get("email")
+    if not email:
+        raise HTTPException(status_code=400, detail="Email is required")
+    
+    user = db.query(User).filter(User.email == email).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Create password reset token (valid for 15 minutes)
+    reset_token = create_access_token(
+        data={"user_id": user.id, "purpose": "password_reset"},
+        expires_delta=timedelta(minutes=15)
+    )
+
+    reset_link = f"http://localhost:5173/reset-password?token={reset_token}"
+
+    # Send reset email
+    try:
+        send_email(
+            to=email,
+            subject="Reset Your TravelNudge Password",
+            body=f"""
+            <h3>Hello {user.full_name or "Traveler"},</h3>
+            <p>You requested a password reset. Click the link below to set a new password:</p>
+            <a href="{reset_link}" style="color:blue;">Reset Password</a>
+            <p>This link will expire in 15 minutes.</p>
+            <p>If you did not request this, please ignore this email.</p>
+            """,
+        )
+    except Exception as e:
+        print("Email sending error:", e)
+        raise HTTPException(status_code=500, detail="Failed to send reset email")
+
+    return JSONResponse(
+        content={"message": "Password reset email sent successfully."},
+        status_code=200
+    )
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    new_password: str
+
+
+@auth_router.post("/reset-password")
+def reset_password(request: ResetPasswordRequest, db: Session = Depends(get_db)):
+    """
+    Reset password using valid token
+    """
+    try:
+        payload = verify_token(request.token)
+    except Exception as e:
+        print("Token verification error:", e)
+        raise HTTPException(status_code=400, detail="Invalid or expired token")
+
+    if not payload or payload.get("purpose") != "password_reset":
+        raise HTTPException(status_code=400, detail="Invalid or expired token")
+
+    user_id = payload.get("user_id")
+    user = db.query(User).filter(User.id == user_id).first()
+
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Update password
+    user.hashed_password = get_password_hash(request.new_password)
+    db.commit()
+
+    return JSONResponse(
+        content={"message": "Password has been reset successfully."},
+        status_code=200
+    )
+
+
 
 # Social login endpoints
 class SocialLoginRequest(BaseModel):

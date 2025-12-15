@@ -1,5 +1,14 @@
 import sys
 import os
+from fastapi import FastAPI
+from app.utils.forgot_password import router as forgot_router
+
+
+app = FastAPI()
+
+# include forgot password endpoint
+app.include_router(forgot_router)
+
 
 # Add the current directory to Python path
 sys.path.append(os.path.dirname(__file__))
@@ -96,7 +105,7 @@ def api_info():
         "endpoints": {
             "auth": {
                 "signup": "/api/v1/auth/signup",
-                "login": "/api/v1/auth/login", 
+                "signin": "/api/v1/auth/signin",
                 "logout": "/api/v1/auth/logout",
                 "me": "/api/v1/auth/me"
             },
