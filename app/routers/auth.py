@@ -8,8 +8,9 @@ from app.utils.responses import success_response, created_response, error_respon
 from datetime import datetime, timedelta
 from pydantic import BaseModel
 from typing import Optional
-from app.utils.email import send_email
+from app.utils.email import send_email, send_password_reset_email
 from fastapi.responses import JSONResponse
+import secrets
 
 auth_router = APIRouter()
 
@@ -153,7 +154,8 @@ def logout(token: str, db: Session = Depends(get_db)):
 @auth_router.post("/forgot-password")
 def forgot_password(request_data: dict, db: Session = Depends(get_db)):
     """
-    Request password reset email
+    Request password reset email using Zepto Mail.
+    Generates a reset token and sends a formatted email notification to the user.
     """
     email = request_data.get("email")
     if not email:
@@ -161,37 +163,46 @@ def forgot_password(request_data: dict, db: Session = Depends(get_db)):
     
     user = db.query(User).filter(User.email == email).first()
     if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+        # For security, don't reveal if email exists
+        return JSONResponse(
+            content={"message": "If an account exists with this email, a password reset link has been sent"},
+            status_code=200
+        )
 
-    # Create password reset token (valid for 15 minutes)
-    reset_token = create_access_token(
-        data={"user_id": user.id, "purpose": "password_reset"},
-        expires_delta=timedelta(minutes=15)
-    )
+    # Generate a secure reset token (32-byte random token)
+    reset_token = secrets.token_urlsafe(32)
+    token_expiry = datetime.utcnow() + timedelta(hours=1)  # Token valid for 1 hour
 
+    # Store the reset token (if your User model has these fields)
+    try:
+        user.reset_token = reset_token
+        user.reset_token_expiry = token_expiry
+        db.commit()
+    except Exception as e:
+        # If User model doesn't have reset_token fields, continue anyway
+        print(f"Note: Could not store reset token in DB: {e}")
+
+    # Create the password reset link (update with your frontend URL)
     reset_link = f"http://localhost:5173/reset-password?token={reset_token}"
 
-    # Send reset email
+    # Send reset email using Zepto Mail
     try:
-        send_email(
+        success = send_password_reset_email(
             to=email,
-            subject="Reset Your TravelNudge Password",
-            body=f"""
-            <h3>Hello {user.full_name or "Traveler"},</h3>
-            <p>You requested a password reset. Click the link below to set a new password:</p>
-            <a href="{reset_link}" style="color:blue;">Reset Password</a>
-            <p>This link will expire in 15 minutes.</p>
-            <p>If you did not request this, please ignore this email.</p>
-            """,
+            reset_token=reset_link,
+            user_name=user.full_name
         )
+        
+        if success:
+            return JSONResponse(
+                content={"message": "Password reset email sent successfully. Please check your inbox."},
+                status_code=200
+            )
+        else:
+            raise HTTPException(status_code=500, detail="Failed to send reset email")
     except Exception as e:
-        print("Email sending error:", e)
-        raise HTTPException(status_code=500, detail="Failed to send reset email")
-
-    return JSONResponse(
-        content={"message": "Password reset email sent successfully."},
-        status_code=200
-    )
+        print(f"Error sending password reset email: {e}")
+        raise HTTPException(status_code=500, detail="Failed to send reset email. Please try again later.")
 
 
 class ResetPasswordRequest(BaseModel):
@@ -202,29 +213,52 @@ class ResetPasswordRequest(BaseModel):
 @auth_router.post("/reset-password")
 def reset_password(request: ResetPasswordRequest, db: Session = Depends(get_db)):
     """
-    Reset password using valid token
+    Reset password using valid reset token from email.
+    Token must be valid and not expired.
     """
+    token = request.token
+
+    # Try to find user with this reset token
+    user = None
     try:
-        payload = verify_token(request.token)
+        # First, try to find by reset_token if User model has this field
+        user = db.query(User).filter(User.reset_token == token).first()
+        if user and user.reset_token_expiry:
+            if datetime.utcnow() > user.reset_token_expiry:
+                user.reset_token = None
+                user.reset_token_expiry = None
+                db.commit()
+                raise HTTPException(status_code=400, detail="Reset token has expired. Please request a new one.")
     except Exception as e:
-        print("Token verification error:", e)
-        raise HTTPException(status_code=400, detail="Invalid or expired token")
-
-    if not payload or payload.get("purpose") != "password_reset":
-        raise HTTPException(status_code=400, detail="Invalid or expired token")
-
-    user_id = payload.get("user_id")
-    user = db.query(User).filter(User.id == user_id).first()
+        # If User model doesn't have reset_token fields, try JWT verification
+        print(f"Could not verify reset token from DB: {e}")
+        try:
+            payload = verify_token(token)
+            if payload and payload.get("purpose") == "password_reset":
+                user_id = payload.get("user_id")
+                user = db.query(User).filter(User.id == user_id).first()
+            else:
+                raise HTTPException(status_code=400, detail="Invalid or expired token")
+        except:
+            raise HTTPException(status_code=400, detail="Invalid or expired token")
 
     if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+        raise HTTPException(status_code=400, detail="Invalid or expired token")
 
     # Update password
     user.hashed_password = get_password_hash(request.new_password)
+    
+    # Clear reset token if User model has this field
+    try:
+        user.reset_token = None
+        user.reset_token_expiry = None
+    except:
+        pass
+    
     db.commit()
 
     return JSONResponse(
-        content={"message": "Password has been reset successfully."},
+        content={"message": "✅ Password has been reset successfully. You can now login with your new password."},
         status_code=200
     )
 

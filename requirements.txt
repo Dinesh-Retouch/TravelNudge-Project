@@ -13,3 +13,4 @@ pydantic[email]
 argon2_cffi
 google-generativeai
 python-dotenv
+requests

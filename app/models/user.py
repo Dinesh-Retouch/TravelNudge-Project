@@ -16,6 +16,10 @@ class User(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     
+    # Password reset fields for Zepto Mail integration
+    reset_token = Column(String(500), nullable=True, index=True)
+    reset_token_expiry = Column(DateTime(timezone=True), nullable=True)
+    
     # Relationship with UserSession
     sessions = relationship("UserSession", back_populates="user")
 
@@ -31,5 +35,3 @@ class UserSession(Base):
     
     # Relationship with User
     user = relationship("User", back_populates="sessions")
-    
-    
