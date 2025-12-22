@@ -1,14 +1,7 @@
 import sys
 import os
 from fastapi import FastAPI
-from app.utils.forgot_password import router as forgot_router
-
-
-app = FastAPI()
-
-# include forgot password endpoint
-app.include_router(forgot_router)
-
+from fastapi.middleware.cors import CORSMiddleware
 
 # Add the current directory to Python path
 sys.path.append(os.path.dirname(__file__))
@@ -53,15 +46,28 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Import forgot password router
+try:
+    from app.utils.forgot_password import router as forgot_router
+    app.include_router(forgot_router, prefix="/api/v1/auth", tags=["Authentication"])
+    print("✅ Forgot password router loaded successfully")
+except ImportError as e:
+    try:
+        from utils.forgot_password import router as forgot_router
+        app.include_router(forgot_router, prefix="/api/v1/auth", tags=["Authentication"])
+        print("✅ Forgot password router loaded successfully (direct import)")
+    except ImportError as e:
+        print(f"⚠️ Forgot password router import warning: {e}")
+
 # Import and include routers
 try:
     from app.routers.auth import auth_router
-    app.include_router(auth_router, tags=["Authentication"])
+    app.include_router(auth_router, prefix="/api/v1/auth", tags=["Authentication"])
     print("✅ Auth router loaded successfully")
 except ImportError:
     try:
         from routers.auth import auth_router
-        app.include_router(auth_router, tags=["Authentication"])
+        app.include_router(auth_router, prefix="/api/v1/auth", tags=["Authentication"])
         print("✅ Auth router loaded successfully (direct import)")
     except ImportError as e:
         print(f"❌ Auth router import error: {e}")
